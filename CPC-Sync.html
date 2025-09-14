@@ -80,7 +80,6 @@
         };
         let peerConnection;
         let dataChannel;
-        let isConnected = false;
 
         const showStatus = (message, type = 'info') => {
             let color = '';
@@ -103,10 +102,8 @@
 
             peerConnection.onconnectionstatechange = () => {
                 if (peerConnection.connectionState === 'connected') {
-                    isConnected = true;
                     showStatus('¡Conexión establecida! Los dispositivos están sincronizados.', 'success');
-                } else if (peerConnection.connectionState === 'disconnected') {
-                    isConnected = false;
+                } else if (peerConnection.connectionState === 'disconnected' || peerConnection.connectionState === 'failed') {
                     showStatus('¡Conexión perdida!', 'error');
                 }
             };
@@ -114,7 +111,6 @@
 
         const setupDataChannel = () => {
             dataChannel.onopen = () => {
-                isConnected = true;
                 showStatus('¡Conectado! La sincronización está activa.', 'success');
             };
             dataChannel.onmessage = (event) => {
