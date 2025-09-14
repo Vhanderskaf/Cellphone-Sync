@@ -70,7 +70,7 @@
     <!-- Firebase SDK -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, onSnapshot, collection, query, where, getDocs, addDoc, serverTimestamp, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
@@ -78,14 +78,11 @@
         setLogLevel('debug');
 
         // Configuración de Firebase - ¡Esta es la clave!
-        // IMPORTANTE: Para que la aplicación funcione en tu hosting, debes crear un proyecto de Firebase
-        // en https://firebase.google.com/ y reemplazar estos valores con los de tu proyecto.
-        const firebaseConfig = {
-          apiKey: "fake-api-key",
-          authDomain: "fake-auth-domain",
-          projectId: "fake-project-id"
-        };
-        const appId = "default-app-id";
+        // El entorno Canvas proporciona automáticamente las credenciales necesarias.
+        // NO es necesario que las reemplaces.
+        const firebaseConfig = JSON.parse(__firebase_config);
+        const initialAuthToken = __initial_auth_token;
+        const appId = __app_id;
 
         // Elementos del DOM
         const clipboardTextarea = document.getElementById('clipboardTextarea');
@@ -168,10 +165,12 @@
 
             // 2. Gestión de la presencia del usuario
             const updatePresence = async () => {
-                await setDoc(userPresenceDocRef, {
-                    lastActive: serverTimestamp(),
-                    userId: userId
-                });
+                if (userPresenceDocRef) {
+                    await setDoc(userPresenceDocRef, {
+                        lastActive: serverTimestamp(),
+                        userId: userId
+                    });
+                }
             };
 
             // Escribe la presencia del usuario al conectarse
@@ -217,36 +216,33 @@
          * Inicializa la app y la autenticación de Firebase.
          */
         const initializeFirebase = async () => {
-            try {
-                // La autenticación anónima se ejecutará en un modo de demostración
-                app = initializeApp(firebaseConfig);
-                db = getFirestore(app);
-                auth = getAuth(app);
+            app = initializeApp(firebaseConfig);
+            db = getFirestore(app);
+            auth = getAuth(app);
 
-                // La autenticación anónima siempre funcionará
+            if (initialAuthToken) {
+                await signInWithCustomToken(auth, initialAuthToken);
+            } else {
                 await signInAnonymously(auth);
-
-                onAuthStateChanged(auth, (user) => {
-                    if (user) {
-                        userId = user.uid;
-                        userIdDisplay.textContent = userId;
-                        const storedRoomId = localStorage.getItem(LOCAL_STORAGE_KEY);
-                        if (storedRoomId) {
-                            connectToRoom(storedRoomId);
-                        } else {
-                            // Si no hay una sala almacenada, muestra la sección para unirse
-                            joinRoomSection.classList.remove('hidden');
-                            showStatus("Introduce un ID de sala o comparte el tuyo para empezar.", "info");
-                        }
-                    } else {
-                        showStatus("Error de autenticación. Inténtalo de nuevo.", "error");
-                        userIdDisplay.textContent = "Error";
-                    }
-                });
-            } catch (error) {
-                console.error("Error al inicializar Firebase:", error);
-                showStatus(`Error de inicialización: ${error.message}. Por favor, reemplaza los valores de 'firebaseConfig' en el código con los de tu propio proyecto de Firebase.`, "error");
             }
+
+            onAuthStateChanged(auth, (user) => {
+                if (user) {
+                    userId = user.uid;
+                    userIdDisplay.textContent = userId;
+                    const storedRoomId = localStorage.getItem(LOCAL_STORAGE_KEY);
+                    if (storedRoomId) {
+                        connectToRoom(storedRoomId);
+                    } else {
+                        // Si no hay una sala almacenada, muestra la sección para unirse
+                        joinRoomSection.classList.remove('hidden');
+                        showStatus("Introduce un ID de sala o comparte el tuyo para empezar.", "info");
+                    }
+                } else {
+                    showStatus("Error de autenticación. Inténtalo de nuevo.", "error");
+                    userIdDisplay.textContent = "Error";
+                }
+            });
         };
 
         /**
