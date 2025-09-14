@@ -221,31 +221,36 @@
                 db = getFirestore(app);
                 auth = getAuth(app);
                 
-                // Autenticar de forma anónima o con token antes de configurar el observador de estado.
+                // Configurar el observador de estado de autenticación
+                const authReadyPromise = new Promise((resolve) => {
+                    onAuthStateChanged(auth, (user) => {
+                        if (user) {
+                            userId = user.uid;
+                            userIdDisplay.textContent = userId;
+                            const storedRoomId = localStorage.getItem(LOCAL_STORAGE_KEY);
+                            if (storedRoomId) {
+                                connectToRoom(storedRoomId);
+                            } else {
+                                joinRoomSection.classList.remove('hidden');
+                                showStatus("Introduce un ID de sala o comparte el tuyo para empezar.", "info");
+                            }
+                        } else {
+                            showStatus("Error de autenticación: No se pudo autenticar al usuario. Es posible que el token no sea válido o que el entorno no esté configurado correctamente.", "error");
+                            userIdDisplay.textContent = "Error";
+                        }
+                        resolve();
+                    });
+                });
+                
+                // Autenticar de forma anónima o con token
                 if (initialAuthToken) {
                     await signInWithCustomToken(auth, initialAuthToken);
                 } else {
                     await signInAnonymously(auth);
                 }
+                
+                await authReadyPromise;
 
-                // Configurar el observador de estado de autenticación
-                onAuthStateChanged(auth, (user) => {
-                    if (user) {
-                        userId = user.uid;
-                        userIdDisplay.textContent = userId;
-                        const storedRoomId = localStorage.getItem(LOCAL_STORAGE_KEY);
-                        if (storedRoomId) {
-                            connectToRoom(storedRoomId);
-                        } else {
-                            // Si no hay una sala almacenada, muestra la sección para unirse
-                            joinRoomSection.classList.remove('hidden');
-                            showStatus("Introduce un ID de sala o comparte el tuyo para empezar.", "info");
-                        }
-                    } else {
-                        showStatus("Error de autenticación: No se pudo autenticar al usuario. Es posible que el token no sea válido o que el entorno no esté configurado correctamente.", "error");
-                        userIdDisplay.textContent = "Error";
-                    }
-                });
             } catch (error) {
                 console.error("Error al inicializar Firebase:", error);
                 showStatus(`Error de inicialización: ${error.message}. Este error indica un problema con la configuración de Firebase.`, "error");
