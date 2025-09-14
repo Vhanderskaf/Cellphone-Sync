@@ -36,15 +36,15 @@
     <!-- Firebase SDK -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // Establecer nivel de log para depuración
         setLogLevel('debug');
 
         // Configuración de Firebase - ¡Esta es la clave!
+        // Las credenciales son proporcionadas automáticamente por el entorno.
         const firebaseConfig = JSON.parse(__firebase_config);
-        const initialAuthToken = __initial_auth_token;
 
         // Elementos del DOM
         const userIdDisplay = document.getElementById('userIdDisplay');
@@ -69,28 +69,21 @@
          */
         const initializeFirebase = async () => {
             try {
-                // 1. Inicializar app y servicios
                 const app = initializeApp(firebaseConfig);
-                const db = getFirestore(app);
                 const auth = getAuth(app);
+                const db = getFirestore(app);
+
+                // Autenticar de forma anónima y obtener el ID de usuario
+                const userCredential = await signInAnonymously(auth);
+                const user = userCredential.user;
                 
-                // 2. Autenticar de forma anónima o con token
-                if (initialAuthToken) {
-                    await signInWithCustomToken(auth, initialAuthToken);
+                if (user) {
+                    userIdDisplay.textContent = user.uid;
+                    showStatus("¡Autenticación exitosa! Tu ID de dispositivo se muestra arriba.", "success");
                 } else {
-                    await signInAnonymously(auth);
+                    userIdDisplay.textContent = "Error";
+                    showStatus("Error de autenticación. No se pudo iniciar sesión.", "error");
                 }
-                
-                // 3. Esperar el estado de autenticación
-                onAuthStateChanged(auth, (user) => {
-                    if (user) {
-                        userIdDisplay.textContent = user.uid;
-                        showStatus("¡Autenticación exitosa! Tu ID de dispositivo se muestra arriba.", "success");
-                    } else {
-                        userIdDisplay.textContent = "Error";
-                        showStatus("Error de autenticación. No se pudo iniciar sesión.", "error");
-                    }
-                });
 
             } catch (error) {
                 console.error("Error al inicializar Firebase:", error);
