@@ -221,12 +221,14 @@
                 db = getFirestore(app);
                 auth = getAuth(app);
                 
+                // Autenticar de forma anónima o con token antes de configurar el observador de estado.
                 if (initialAuthToken) {
                     await signInWithCustomToken(auth, initialAuthToken);
                 } else {
                     await signInAnonymously(auth);
                 }
 
+                // Configurar el observador de estado de autenticación
                 onAuthStateChanged(auth, (user) => {
                     if (user) {
                         userId = user.uid;
