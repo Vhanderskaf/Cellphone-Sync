@@ -69,23 +69,20 @@
     <!-- Firebase SDK -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // Establecer nivel de log para depuración
         setLogLevel('debug');
 
-        // Variables globales proporcionadas por el entorno.
-        // Se añade una validación para asegurar que firebaseConfig es un objeto válido.
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-        let firebaseConfig = {};
-        try {
-            firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
-        } catch (e) {
-            console.error("Error al parsear __firebase_config:", e);
-        }
-        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+        // Configuración de Firebase - ¡Esta es la clave!
+        const firebaseConfig = {
+          apiKey: "fake-api-key",
+          authDomain: "fake-auth-domain",
+          projectId: "fake-project-id"
+        };
+        const appId = "default-app-id";
 
         // Elementos del DOM
         const clipboardTextarea = document.getElementById('clipboardTextarea');
@@ -170,23 +167,13 @@
          */
         const initializeFirebase = async () => {
             try {
-                if (Object.keys(firebaseConfig).length === 0) {
-                    showStatus("Configuración de Firebase no encontrada. Usando modo de demostración. Los datos no se guardarán.", "error");
-                    userId = `anon-${Math.random().toString(36).substring(2, 15)}`;
-                    userIdDisplay.textContent = userId;
-                    joinRoomSection.classList.remove('hidden');
-                    return;
-                }
-                
+                // Inicialización directa con la configuración
                 app = initializeApp(firebaseConfig);
                 db = getFirestore(app);
                 auth = getAuth(app);
 
-                if (initialAuthToken) {
-                    await signInWithCustomToken(auth, initialAuthToken);
-                } else {
-                    await signInAnonymously(auth);
-                }
+                // La autenticación anónima siempre funcionará
+                await signInAnonymously(auth);
 
                 onAuthStateChanged(auth, (user) => {
                     if (user) {
