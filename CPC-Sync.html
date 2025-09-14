@@ -80,6 +80,7 @@
         };
         let peerConnection;
         let dataChannel;
+        let isConnected = false;
 
         const showStatus = (message, type = 'info') => {
             let color = '';
@@ -99,10 +100,21 @@
                     showStatus("Copia el código de arriba y pégalo en el otro dispositivo.", "info");
                 }
             };
+
+            peerConnection.onconnectionstatechange = () => {
+                if (peerConnection.connectionState === 'connected') {
+                    isConnected = true;
+                    showStatus('¡Conexión establecida! Los dispositivos están sincronizados.', 'success');
+                } else if (peerConnection.connectionState === 'disconnected') {
+                    isConnected = false;
+                    showStatus('¡Conexión perdida!', 'error');
+                }
+            };
         };
 
         const setupDataChannel = () => {
             dataChannel.onopen = () => {
+                isConnected = true;
                 showStatus('¡Conectado! La sincronización está activa.', 'success');
             };
             dataChannel.onmessage = (event) => {
