@@ -70,15 +70,21 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, setDoc, onSnapshot, getDoc, collection, addDoc, query, where } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // Establecer nivel de log para depuración
         setLogLevel('debug');
 
-        // Variables globales proporcionadas por el entorno
+        // Variables globales proporcionadas por el entorno.
+        // Se añade una validación para asegurar que firebaseConfig es un objeto válido.
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+        let firebaseConfig = {};
+        try {
+            firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+        } catch (e) {
+            console.error("Error al parsear __firebase_config:", e);
+        }
         const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
 
         // Elementos del DOM
@@ -165,8 +171,13 @@
         const initializeFirebase = async () => {
             try {
                 if (Object.keys(firebaseConfig).length === 0) {
-                    throw new Error("Firebase config no válida.");
+                    showStatus("Configuración de Firebase no encontrada. Usando modo de demostración. Los datos no se guardarán.", "error");
+                    userId = `anon-${Math.random().toString(36).substring(2, 15)}`;
+                    userIdDisplay.textContent = userId;
+                    joinRoomSection.classList.remove('hidden');
+                    return;
                 }
+                
                 app = initializeApp(firebaseConfig);
                 db = getFirestore(app);
                 auth = getAuth(app);
