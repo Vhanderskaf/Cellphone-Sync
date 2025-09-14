@@ -93,16 +93,28 @@
         const setupPeerConnection = () => {
             peerConnection = new RTCPeerConnection(configuration);
 
+            // Celular 1 espera la respuesta del Celular 2
             peerConnection.onicecandidate = ({ candidate }) => {
                 if (candidate) {
                     sessionCodeDisplay.textContent = JSON.stringify(peerConnection.localDescription);
                     showStatus("Copia el código de arriba y pégalo en el otro dispositivo.", "info");
                 }
             };
+            
+            // Cuando Celular 2 se conecta y envía su respuesta
+            peerConnection.onnegotiationneeded = async () => {
+                if (peerConnection.signalingState !== 'stable') return;
+                const offer = await peerConnection.createOffer();
+                await peerConnection.setLocalDescription(offer);
+                sessionCodeDisplay.textContent = JSON.stringify(peerConnection.localDescription);
+            };
 
             peerConnection.onconnectionstatechange = () => {
                 if (peerConnection.connectionState === 'connected') {
                     showStatus('¡Conexión establecida! Los dispositivos están sincronizados.', 'success');
+                    joinBtn.classList.remove('bg-gray-600', 'hover:bg-gray-700');
+                    joinBtn.classList.add('bg-green-600', 'hover:bg-green-700');
+                    joinBtn.textContent = 'Conectado';
                 } else if (peerConnection.connectionState === 'disconnected' || peerConnection.connectionState === 'failed') {
                     showStatus('¡Conexión perdida!', 'error');
                 }
@@ -144,10 +156,12 @@
                     setupDataChannel();
                 };
                 await peerConnection.setRemoteDescription(remoteDescription);
-                const answer = await peerConnection.createAnswer();
-                await peerConnection.setLocalDescription(answer);
-                sessionCodeDisplay.textContent = JSON.stringify(peerConnection.localDescription);
-                showStatus("Copia este código y pégalo en el otro dispositivo para completar la conexión.", "info");
+                if (remoteDescription.type === 'offer') {
+                    const answer = await peerConnection.createAnswer();
+                    await peerConnection.setLocalDescription(answer);
+                    sessionCodeDisplay.textContent = JSON.stringify(peerConnection.localDescription);
+                    showStatus("Copia este código y pégalo en el otro dispositivo para completar la conexión.", "info");
+                }
                 joinBtn.textContent = 'Unido'; // Cambia el texto del botón cuando se une
                 joinBtn.disabled = true;
             } catch (e) {
