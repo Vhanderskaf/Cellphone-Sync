@@ -125,6 +125,9 @@
             setupDataChannel();
             const offer = await peerConnection.createOffer();
             await peerConnection.setLocalDescription(offer);
+            generateBtn.style.display = 'none'; // Oculta el botón Generar después de la primera vez
+            joinBtn.textContent = 'Conectando...'; // Muestra estado de conexión
+            joinBtn.disabled = true;
         });
 
         joinBtn.addEventListener('click', async () => {
@@ -145,6 +148,8 @@
                 await peerConnection.setLocalDescription(answer);
                 sessionCodeDisplay.textContent = JSON.stringify(peerConnection.localDescription);
                 showStatus("Copia este código y pégalo en el otro dispositivo para completar la conexión.", "info");
+                joinBtn.textContent = 'Unido'; // Cambia el texto del botón cuando se une
+                joinBtn.disabled = true;
             } catch (e) {
                 showStatus('Código de sesión no válido.', 'error');
             }
