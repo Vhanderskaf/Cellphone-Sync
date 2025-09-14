@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sincronizador de Portapapeles</title>
+    <!-- Incluye Tailwind CSS para un diseño moderno y responsive -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f3f4f6;
+        }
+        .container-app {
+            min-height: 100vh;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 flex items-center justify-center p-4">
+    <div class="container-app w-full max-w-2xl bg-white shadow-xl rounded-2xl p-6 md:p-10 flex flex-col space-y-6">
+        <h1 class="text-3xl md:text-4xl font-extrabold text-gray-800 text-center">
+            Sincronizador de Portapapeles
+        </h1>
+        <p class="text-gray-600 text-center">
+            Copia y pega texto entre tus dispositivos en tiempo real.
+        </p>
+
+        <div class="bg-indigo-50 border border-indigo-200 text-indigo-800 rounded-lg p-4 flex flex-col space-y-2">
+            <label class="text-sm font-semibold">Tu ID de Dispositivo (compartir para sincronizar):</label>
+            <div id="userIdDisplay" class="bg-white border border-indigo-300 rounded-md p-2 font-mono text-sm break-words select-all cursor-pointer">Cargando...</div>
+            <button id="shareIdBtn" class="bg-indigo-400 text-white font-semibold py-2 px-4 rounded-lg mt-2 hover:bg-indigo-500 transition-all duration-200">
+                Compartir ID
+            </button>
+        </div>
+
+        <div id="joinRoomSection" class="flex flex-col space-y-4">
+            <label for="roomIdInput" class="text-gray-700 font-semibold">Únete a una Sala:</label>
+            <input type="text" id="roomIdInput" placeholder="Introduce el ID de la sala aquí" class="p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <button id="joinRoomBtn" class="bg-blue-600 text-white font-bold py-3 px-6 rounded-lg shadow-md hover:bg-blue-700 transition-all duration-200 transform hover:scale-105">
+                Unirse
+            </button>
+        </div>
+
+        <div class="flex-grow flex flex-col space-y-4">
+            <textarea id="clipboardTextarea"
+                      class="w-full flex-grow p-4 text-gray-700 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all duration-200"
+                      rows="8"
+                      placeholder="El texto sincronizado aparecerá aquí."></textarea>
+
+            <div class="flex flex-col sm:flex-row sm:space-x-4 space-y-4 sm:space-y-0">
+                <button id="copyAndSendBtn"
+                        class="w-full sm:w-1/2 bg-indigo-600 text-white font-bold py-3 px-6 rounded-lg shadow-md hover:bg-indigo-700 transition-all duration-200 transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2">
+                    Copiar y Enviar
+                </button>
+                <button id="pasteBtn"
+                        class="w-full sm:w-1/2 bg-gray-600 text-white font-bold py-3 px-6 rounded-lg shadow-md hover:bg-gray-700 transition-all duration-200 transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2">
+                    Pegar de Mi Portapapeles
+                </button>
+            </div>
+            <button id="clearBtn"
+                    class="w-full bg-red-500 text-white font-bold py-3 px-6 rounded-lg shadow-md hover:bg-red-600 transition-all duration-200 transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2">
+                Limpiar
+            </button>
+        </div>
+
+        <div id="statusMessage" class="text-center text-sm mt-4 text-gray-500"></div>
+    </div>
+
+    <!-- Firebase SDK -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, onSnapshot, getDoc, collection, addDoc, query, where } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Establecer nivel de log para depuración
+        setLogLevel('debug');
+
+        // Variables globales proporcionadas por el entorno
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+        // Elementos del DOM
+        const clipboardTextarea = document.getElementById('clipboardTextarea');
+        const copyAndSendBtn = document.getElementById('copyAndSendBtn');
+        const pasteBtn = document.getElementById('pasteBtn');
+        const clearBtn = document.getElementById('clearBtn');
+        const statusMessage = document.getElementById('statusMessage');
+        const userIdDisplay = document.getElementById('userIdDisplay');
+        const roomIdInput = document.getElementById('roomIdInput');
+        const joinRoomBtn = document.getElementById('joinRoomBtn');
+        const joinRoomSection = document.getElementById('joinRoomSection');
+        const shareIdBtn = document.getElementById('shareIdBtn');
+
+        // Constante para el ID de la sala almacenado
+        const LOCAL_STORAGE_KEY = 'clipboardSyncRoomId';
+
+        // Inicializar Firebase
+        let app;
+        let db;
+        let auth;
+        let userId = null;
+        let clipboardDocRef = null;
+        let unsubscribe = null; // Para manejar el listener de Firestore
+
+        /**
+         * Muestra un mensaje de estado en la UI.
+         * @param {string} message El mensaje a mostrar.
+         * @param {string} type El tipo de mensaje ('success', 'error', 'info').
+         */
+        const showStatus = (message, type = 'info') => {
+            let color = '';
+            if (type === 'success') color = 'text-green-500';
+            else if (type === 'error') color = 'text-red-500';
+            else color = 'text-gray-500';
+            statusMessage.textContent = message;
+            statusMessage.className = `text-center text-sm mt-4 ${color}`;
+        };
+
+        /**
+         * Conecta a una sala específica de Firestore.
+         * @param {string} roomId El ID de la sala (puede ser el ID del usuario o el de otro dispositivo).
+         */
+        const connectToRoom = (roomId) => {
+            if (unsubscribe) {
+                unsubscribe(); // Desconecta del listener anterior si existe
+            }
+
+            const clipboardPath = `artifacts/${appId}/public/data/clipboards/${roomId}`;
+            clipboardDocRef = doc(db, clipboardPath);
+
+            unsubscribe = onSnapshot(clipboardDocRef, (docSnap) => {
+                if (docSnap.exists()) {
+                    const data = docSnap.data();
+                    if (data && data.content) {
+                        const currentText = clipboardTextarea.value;
+                        if (currentText !== data.content) {
+                            clipboardTextarea.value = data.content;
+                            showStatus(`Contenido del portapapeles de la sala ${roomId} sincronizado.`, "success");
+                        }
+                    }
+                } else {
+                    // Crea el documento si no existe, por ejemplo, si es la primera vez que se usa este ID.
+                    setDoc(clipboardDocRef, { content: "" }).then(() => {
+                        showStatus(`Sala ${roomId} creada.`, "info");
+                    }).catch(error => {
+                        console.error("Error al crear el documento:", error);
+                    });
+                }
+            }, (error) => {
+                console.error("Error al escuchar cambios en Firestore:", error);
+                showStatus(`Error de sincronización con la sala ${roomId}: ${error.message}`, "error");
+            });
+
+            // Oculta la sección de unirse a la sala si la conexión es exitosa
+            joinRoomSection.classList.add('hidden');
+            localStorage.setItem(LOCAL_STORAGE_KEY, roomId);
+            showStatus(`¡Conectado a la sala ${roomId}!`, "success");
+        };
+
+        /**
+         * Inicializa la app y la autenticación de Firebase.
+         */
+        const initializeFirebase = async () => {
+            try {
+                if (Object.keys(firebaseConfig).length === 0) {
+                    throw new Error("Firebase config no válida.");
+                }
+                app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+
+                if (initialAuthToken) {
+                    await signInWithCustomToken(auth, initialAuthToken);
+                } else {
+                    await signInAnonymously(auth);
+                }
+
+                onAuthStateChanged(auth, (user) => {
+                    if (user) {
+                        userId = user.uid;
+                        userIdDisplay.textContent = userId;
+                        const storedRoomId = localStorage.getItem(LOCAL_STORAGE_KEY);
+                        if (storedRoomId) {
+                            connectToRoom(storedRoomId);
+                        } else {
+                            // Si no hay una sala almacenada, muestra la sección para unirse
+                            joinRoomSection.classList.remove('hidden');
+                            showStatus("Introduce un ID de sala o comparte el tuyo para empezar.", "info");
+                        }
+                    } else {
+                        showStatus("Error de autenticación. Inténtalo de nuevo.", "error");
+                        userIdDisplay.textContent = "Error";
+                    }
+                });
+            } catch (error) {
+                console.error("Error al inicializar Firebase:", error);
+                showStatus(`Error de inicialización: ${error.message}`, "error");
+            }
+        };
+
+        /**
+         * Copia el texto del área de texto al portapapeles y lo envía a Firestore.
+         */
+        copyAndSendBtn.addEventListener('click', async () => {
+            const text = clipboardTextarea.value;
+            if (!clipboardDocRef) {
+                showStatus("Error: No estás conectado a una sala.", "error");
+                return;
+            }
+            try {
+                // Copia al portapapeles local
+                await navigator.clipboard.writeText(text);
+
+                // Actualiza el documento de Firestore
+                await setDoc(clipboardDocRef, { content: text });
+                showStatus("Texto copiado al portapapeles y enviado para sincronizar.", "success");
+            } catch (err) {
+                console.error("Error al copiar o enviar:", err);
+                showStatus("Error al copiar al portapapeles. Asegúrate de haber dado permiso.", "error");
+            }
+        });
+
+        /**
+         * Pega el texto del portapapeles local al área de texto.
+         */
+        pasteBtn.addEventListener('click', async () => {
+            try {
+                const text = await navigator.clipboard.readText();
+                clipboardTextarea.value = text;
+                showStatus("Contenido de tu portapapeles local pegado.", "info");
+            } catch (err) {
+                console.error("Error al leer del portapapeles:", err);
+                showStatus("Error al pegar del portapapeles. Permisos denegados.", "error");
+            }
+        });
+
+        /**
+         * Limpia el área de texto y el documento de Firestore.
+         */
+        clearBtn.addEventListener('click', async () => {
+            if (!clipboardDocRef) {
+                showStatus("Error: No estás conectado a una sala.", "error");
+                return;
+            }
+            try {
+                clipboardTextarea.value = '';
+                await setDoc(clipboardDocRef, { content: '' });
+                showStatus("Portapapeles limpiado.", "success");
+            } catch (err) {
+                console.error("Error al limpiar:", err);
+                showStatus("Error al limpiar el portapapeles remoto.", "error");
+            }
+        });
+
+        // Manejador del botón "Unirse a una Sala"
+        joinRoomBtn.addEventListener('click', () => {
+            const roomId = roomIdInput.value.trim();
+            if (roomId) {
+                connectToRoom(roomId);
+            } else {
+                showStatus("Por favor, introduce un ID de sala válido.", "error");
+            }
+        });
+
+        // Manejador del botón "Compartir ID"
+        shareIdBtn.addEventListener('click', async () => {
+            if (userId && navigator.share) {
+                try {
+                    await navigator.share({
+                        title: 'Mi ID de Sincronización de Portapapeles',
+                        text: `Usa este ID para unirte a mi sala de portapapeles: ${userId}`,
+                    });
+                } catch (err) {
+                    console.error("Error al compartir:", err);
+                    showStatus("Error al usar la función de compartir. Inténtalo manualmente.", "error");
+                }
+            } else {
+                // Fallback para navegadores que no soportan la API de compartir
+                await navigator.clipboard.writeText(userIdDisplay.textContent);
+                showStatus("ID copiado al portapapeles.", "success");
+            }
+        });
+
+        // Inicializar la aplicación
+        window.onload = initializeFirebase;
+    </script>
+</body>
+</html>
