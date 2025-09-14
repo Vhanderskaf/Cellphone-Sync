@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sincronizador de Portapapeles (P2P)</title>
+    <!-- Incluye Tailwind CSS para un diseño moderno y responsive -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f3f4f6;
+        }
+        .container-app {
+            min-height: 100vh;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 flex items-center justify-center p-4">
+    <div class="container-app w-full max-w-2xl bg-white shadow-xl rounded-2xl p-6 md:p-10 flex flex-col space-y-6">
+        <h1 class="text-3xl md:text-4xl font-extrabold text-gray-800 text-center">
+            Sincronizador de Portapapeles
+        </h1>
+        <p class="text-gray-600 text-center">
+            Sincroniza el portapapeles entre dispositivos en la misma red local.
+        </p>
+
+        <div class="bg-indigo-50 border border-indigo-200 text-indigo-800 rounded-lg p-4 flex flex-col space-y-2">
+            <label class="text-sm font-semibold">Código de Sesión (comparte este código):</label>
+            <div id="sessionCodeDisplay" class="bg-white border border-indigo-300 rounded-md p-2 font-mono text-sm break-words select-all cursor-pointer text-center">Generando...</div>
+            <button id="generateBtn" class="bg-indigo-600 text-white font-semibold py-2 px-4 rounded-lg mt-2 hover:bg-indigo-700 transition-all duration-200">Generar Código</button>
+        </div>
+
+        <div class="bg-gray-200 rounded-lg p-4 flex flex-col space-y-2">
+            <label class="text-sm font-semibold">Únete a una Sesión:</label>
+            <input type="text" id="joinCodeInput" placeholder="Introduce el código aquí" class="p-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-gray-500">
+            <button id="joinBtn" class="bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg mt-2 hover:bg-gray-700 transition-all duration-200">Unirse</button>
+        </div>
+
+        <div class="flex-grow flex flex-col space-y-4 mt-6">
+            <textarea id="clipboardTextarea"
+                      class="w-full flex-grow p-4 text-gray-700 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all duration-200"
+                      rows="8"
+                      placeholder="El texto sincronizado aparecerá aquí."></textarea>
+
+            <div class="flex flex-col sm:flex-row sm:space-x-4 space-y-4 sm:space-y-0">
+                <button id="copyAndSendBtn"
+                        class="w-full sm:w-1/2 bg-indigo-600 text-white font-bold py-3 px-6 rounded-lg shadow-md hover:bg-indigo-700 transition-all duration-200 transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2">
+                    Copiar y Enviar
+                </button>
+                <button id="pasteBtn"
+                        class="w-full sm:w-1/2 bg-gray-600 text-white font-bold py-3 px-6 rounded-lg shadow-md hover:bg-gray-700 transition-all duration-200 transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2">
+                    Pegar de Mi Portapapeles
+                </button>
+            </div>
+            <button id="clearBtn"
+                    class="w-full bg-red-500 text-white font-bold py-3 px-6 rounded-lg shadow-md hover:bg-red-600 transition-all duration-200 transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2">
+                Limpiar
+            </button>
+        </div>
+
+        <div id="statusMessage" class="text-center text-sm mt-4 text-gray-500"></div>
+    </div>
+
+    <script type="module">
+        const sessionCodeDisplay = document.getElementById('sessionCodeDisplay');
+        const generateBtn = document.getElementById('generateBtn');
+        const joinCodeInput = document.getElementById('joinCodeInput');
+        const joinBtn = document.getElementById('joinBtn');
+        const clipboardTextarea = document.getElementById('clipboardTextarea');
+        const copyAndSendBtn = document.getElementById('copyAndSendBtn');
+        const pasteBtn = document.getElementById('pasteBtn');
+        const clearBtn = document.getElementById('clearBtn');
+        const statusMessage = document.getElementById('statusMessage');
+
+        const configuration = {
+            iceServers: [{
+                urls: 'stun:stun.l.google.com:19302'
+            }]
+        };
+        let peerConnection;
+        let dataChannel;
+
+        const showStatus = (message, type = 'info') => {
+            let color = '';
+            if (type === 'success') color = 'text-green-500';
+            else if (type === 'error') color = 'text-red-500';
+            else color = 'text-gray-500';
+            statusMessage.textContent = message;
+            statusMessage.className = `text-center text-sm mt-4 ${color}`;
+        };
+
+        const createPeerConnection = () => {
+            peerConnection = new RTCPeerConnection(configuration);
+
+            peerConnection.onicecandidate = ({
+                candidate
+            }) => {
+                if (candidate) {
+                    sessionCodeDisplay.textContent = JSON.stringify(peerConnection.localDescription);
+                    showStatus("Copia el código de arriba y pégalo en el otro dispositivo.", "info");
+                }
+            };
+        };
+
+        const createDataChannel = () => {
+            dataChannel = peerConnection.createDataChannel('clipboard');
+            dataChannel.onopen = () => {
+                showStatus('¡Conectado! La sincronización está activa.', 'success');
+            };
+            dataChannel.onmessage = (event) => {
+                clipboardTextarea.value = event.data;
+                showStatus('Portapapeles sincronizado.', 'success');
+            };
+        };
+
+        generateBtn.addEventListener('click', async () => {
+            createPeerConnection();
+            createDataChannel();
+            const offer = await peerConnection.createOffer();
+            await peerConnection.setLocalDescription(offer);
+        });
+
+        joinBtn.addEventListener('click', async () => {
+            const joinCode = joinCodeInput.value.trim();
+            if (!joinCode) {
+                showStatus('Por favor, ingresa un código de sesión.', 'error');
+                return;
+            }
+            try {
+                const remoteDescription = JSON.parse(joinCode);
+                createPeerConnection();
+                peerConnection.ondatachannel = (event) => {
+                    dataChannel = event.channel;
+                    dataChannel.onopen = () => {
+                        showStatus('¡Conectado! La sincronización está activa.', 'success');
+                    };
+                    dataChannel.onmessage = (event) => {
+                        clipboardTextarea.value = event.data;
+                        showStatus('Portapapeles sincronizado.', 'success');
+                    };
+                };
+                await peerConnection.setRemoteDescription(remoteDescription);
+                const answer = await peerConnection.createAnswer();
+                await peerConnection.setLocalDescription(answer);
+                sessionCodeDisplay.textContent = JSON.stringify(peerConnection.localDescription);
+                showStatus("Copia este código y pégalo en el otro dispositivo para completar la conexión.", "info");
+            } catch (e) {
+                showStatus('Código de sesión no válido.', 'error');
+            }
+        });
+
+        copyAndSendBtn.addEventListener('click', async () => {
+            const text = clipboardTextarea.value;
+            if (dataChannel && dataChannel.readyState === 'open') {
+                dataChannel.send(text);
+                showStatus('Texto enviado al otro dispositivo.', 'success');
+                await navigator.clipboard.writeText(text);
+            } else {
+                showStatus('No estás conectado a una sesión.', 'error');
+            }
+        });
+
+        pasteBtn.addEventListener('click', async () => {
+            try {
+                const text = await navigator.clipboard.readText();
+                clipboardTextarea.value = text;
+                showStatus('Contenido de tu portapapeles local pegado.', 'info');
+            } catch (err) {
+                showStatus('Error al pegar del portapapeles. Permisos denegados.', 'error');
+            }
+        });
+
+        clearBtn.addEventListener('click', async () => {
+            clipboardTextarea.value = '';
+            if (dataChannel && dataChannel.readyState === 'open') {
+                dataChannel.send('');
+            }
+            showStatus('Portapapeles limpiado.', 'success');
+        });
+
+        window.onload = () => {
+            showStatus("Haz clic en 'Generar Código' en el primer dispositivo. Luego, pégalo en el segundo y haz clic en 'Unirse'.", "info");
+        };
+    </script>
+</body>
+</html>
