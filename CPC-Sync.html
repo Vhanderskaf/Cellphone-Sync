@@ -90,12 +90,10 @@
             statusMessage.className = `text-center text-sm mt-4 ${color}`;
         };
 
-        const createPeerConnection = () => {
+        const setupPeerConnection = () => {
             peerConnection = new RTCPeerConnection(configuration);
 
-            peerConnection.onicecandidate = ({
-                candidate
-            }) => {
+            peerConnection.onicecandidate = ({ candidate }) => {
                 if (candidate) {
                     sessionCodeDisplay.textContent = JSON.stringify(peerConnection.localDescription);
                     showStatus("Copia el código de arriba y pégalo en el otro dispositivo.", "info");
@@ -103,8 +101,7 @@
             };
         };
 
-        const createDataChannel = () => {
-            dataChannel = peerConnection.createDataChannel('clipboard');
+        const setupDataChannel = () => {
             dataChannel.onopen = () => {
                 showStatus('¡Conectado! La sincronización está activa.', 'success');
             };
@@ -115,8 +112,9 @@
         };
 
         generateBtn.addEventListener('click', async () => {
-            createPeerConnection();
-            createDataChannel();
+            setupPeerConnection();
+            dataChannel = peerConnection.createDataChannel('clipboard');
+            setupDataChannel();
             const offer = await peerConnection.createOffer();
             await peerConnection.setLocalDescription(offer);
         });
@@ -129,16 +127,10 @@
             }
             try {
                 const remoteDescription = JSON.parse(joinCode);
-                createPeerConnection();
+                setupPeerConnection();
                 peerConnection.ondatachannel = (event) => {
                     dataChannel = event.channel;
-                    dataChannel.onopen = () => {
-                        showStatus('¡Conectado! La sincronización está activa.', 'success');
-                    };
-                    dataChannel.onmessage = (event) => {
-                        clipboardTextarea.value = event.data;
-                        showStatus('Portapapeles sincronizado.', 'success');
-                    };
+                    setupDataChannel();
                 };
                 await peerConnection.setRemoteDescription(remoteDescription);
                 const answer = await peerConnection.createAnswer();
