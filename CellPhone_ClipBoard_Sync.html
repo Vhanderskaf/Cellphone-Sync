@@ -64,19 +64,22 @@
         </div>
 
         <div id="statusMessage" class="text-center text-sm mt-4 text-gray-500"></div>
+        <p id="connectedUsersCount" class="text-center text-sm text-gray-400 mt-2">Dispositivos conectados: 0</p>
     </div>
 
     <!-- Firebase SDK -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, doc, setDoc, onSnapshot, collection, query, where, getDocs, addDoc, serverTimestamp, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // Establecer nivel de log para depuración
         setLogLevel('debug');
 
         // Configuración de Firebase - ¡Esta es la clave!
+        // IMPORTANTE: Para que la aplicación funcione en tu hosting, debes crear un proyecto de Firebase
+        // en https://firebase.google.com/ y reemplazar estos valores con los de tu proyecto.
         const firebaseConfig = {
           apiKey: "fake-api-key",
           authDomain: "fake-auth-domain",
@@ -95,6 +98,7 @@
         const joinRoomBtn = document.getElementById('joinRoomBtn');
         const joinRoomSection = document.getElementById('joinRoomSection');
         const shareIdBtn = document.getElementById('shareIdBtn');
+        const connectedUsersCount = document.getElementById('connectedUsersCount');
 
         // Constante para el ID de la sala almacenado
         const LOCAL_STORAGE_KEY = 'clipboardSyncRoomId';
@@ -106,6 +110,8 @@
         let userId = null;
         let clipboardDocRef = null;
         let unsubscribe = null; // Para manejar el listener de Firestore
+        let userPresenceDocRef = null; // Referencia al documento de presencia del usuario
+        let presenceInterval = null; // Intervalo para actualizar la presencia
 
         /**
          * Muestra un mensaje de estado en la UI.
@@ -131,8 +137,12 @@
             }
 
             const clipboardPath = `artifacts/${appId}/public/data/clipboards/${roomId}`;
+            const usersPath = `artifacts/${appId}/public/data/clipboards/${roomId}/users`;
+            
             clipboardDocRef = doc(db, clipboardPath);
+            userPresenceDocRef = doc(db, usersPath, userId);
 
+            // 1. Sincronización del portapapeles
             unsubscribe = onSnapshot(clipboardDocRef, (docSnap) => {
                 if (docSnap.exists()) {
                     const data = docSnap.data();
@@ -156,6 +166,47 @@
                 showStatus(`Error de sincronización con la sala ${roomId}: ${error.message}`, "error");
             });
 
+            // 2. Gestión de la presencia del usuario
+            const updatePresence = async () => {
+                await setDoc(userPresenceDocRef, {
+                    lastActive: serverTimestamp(),
+                    userId: userId
+                });
+            };
+
+            // Escribe la presencia del usuario al conectarse
+            updatePresence();
+            
+            // Actualiza la presencia cada 5 segundos
+            if (presenceInterval) {
+                clearInterval(presenceInterval);
+            }
+            presenceInterval = setInterval(updatePresence, 5000);
+
+            // Elimina la presencia del usuario cuando se cierra la página
+            window.addEventListener('beforeunload', async () => {
+                if (userPresenceDocRef) {
+                    await deleteDoc(userPresenceDocRef);
+                }
+            });
+
+            // 3. Contar usuarios activos
+            const usersCollectionRef = collection(db, usersPath);
+            onSnapshot(usersCollectionRef, (snapshot) => {
+                const now = Date.now();
+                let activeUsers = 0;
+                
+                snapshot.forEach(doc => {
+                    const data = doc.data();
+                    // Considera activo a un usuario si su lastActive es reciente (e.g., últimos 10 segundos)
+                    if (data.lastActive && (now - data.lastActive.toMillis()) < 10000) {
+                        activeUsers++;
+                    }
+                });
+
+                connectedUsersCount.textContent = `Dispositivos conectados: ${activeUsers}`;
+            });
+
             // Oculta la sección de unirse a la sala si la conexión es exitosa
             joinRoomSection.classList.add('hidden');
             localStorage.setItem(LOCAL_STORAGE_KEY, roomId);
@@ -167,7 +218,7 @@
          */
         const initializeFirebase = async () => {
             try {
-                // Inicialización directa con la configuración
+                // La autenticación anónima se ejecutará en un modo de demostración
                 app = initializeApp(firebaseConfig);
                 db = getFirestore(app);
                 auth = getAuth(app);
@@ -194,7 +245,7 @@
                 });
             } catch (error) {
                 console.error("Error al inicializar Firebase:", error);
-                showStatus(`Error de inicialización: ${error.message}`, "error");
+                showStatus(`Error de inicialización: ${error.message}. Por favor, reemplaza los valores de 'firebaseConfig' en el código con los de tu propio proyecto de Firebase.`, "error");
             }
         };
 
